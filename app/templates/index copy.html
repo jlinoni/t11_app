@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ settings.title }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        @media (min-width: 768px) {
+            .sidebar-left { width: 15%; }
+            .main-content { width: 70%; }
+            .sidebar-right { width: 15%; }
+        }
+        .sidebar-toggle { display: none; }
+        @media (max-width: 767px) {
+            .sidebar { 
+                position: fixed; 
+                top: 0; 
+                bottom: 0; 
+                width: 250px; 
+                transform: translateX(-100%);
+                transition: transform 0.3s ease-in-out;
+                z-index: 1000;
+            }
+            .sidebar-right { 
+                right: 0; 
+                transform: translateX(100%);
+            }
+            .sidebar.open { transform: translateX(0); }
+            .sidebar-toggle { 
+                display: block; 
+                position: fixed; 
+                top: 50%; 
+                width: 30px; 
+                height: 30px; 
+                background: #4a5568; 
+                color: white; 
+                text-align: center; 
+                line-height: 30px; 
+                cursor: pointer;
+                z-index: 1001;
+            }
+            .left-toggle { left: 0; }
+            .right-toggle { right: 0; }
+        }
+        .selected {
+            background-color: #FFE4E1 !important;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-6">
+        <div class="bg-white shadow rounded-lg p-4 mb-4 flex justify-between items-center">
+            <div>
+                <h1 id="texto-título-principal" class="text-2xl font-bold text-gray-800">{{ settings.title }}</h1>
+                <h2 id="texto-subtítulo" class="text-lg text-gray-600">{{ settings.subtitle }}</h2>
+                <p>{{ settings.short_description }}</p>
+            </div>
+            <div class="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center">
+                <img src="{{ settings.icon_path }}" alt="Icon" class="w-10 h-10">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-6 mb-6">
+            <div class="bg-white shadow rounded-lg p-4">
+                <h3 class="font-bold mb-2"></h3>
+            </div>
+            <div class="bg-white shadow rounded-lg p-4">
+                <p id="output-text-1">{{ output_text1 }}</p>
+            </div>
+            <div class="bg-white shadow rounded-lg p-4">
+                <p id="output-text-2">{{ output_text2 }}</p>
+            </div>
+        </div>
+
+        <div class="flex -mx-2">
+            <div id="left-sidebar" class="sidebar left bg-white shadow rounded-lg p-4 mx-2 mb-4">
+                <h3 class="font-bold mb-2">Tipo de gráfico</h3>
+                <select id="graph-type" class="w-full p-2 border rounded mb-4">
+                    {% for type in settings.graph_types %}
+                        <option value="{{ type }}" {% if type == "Visualización de Puntos" %}selected{% endif %}>{{ type }}</option>
+                    {% endfor %}
+                </select>
+
+                <h3 class="font-bold mt-4 mb-2">Sub Opción</h3>
+                <select id="sub-option" class="w-full p-2 border rounded mb-4">
+                    {% for option in settings.sub_options["Visualización de Puntos"] %}
+                        <option value="{{ option }}" {% if option == "Todos los puntos" %}selected{% endif %}>{{ option }}</option>
+                    {% endfor %}
+                </select>
+
+                <!-- <h3 class="font-bold mb-2">Otras Opciones</h3> -->
+                <!-- Agregar otras opciones aquí si es necesario -->
+            </div>
+
+            <div class="main-content bg-white shadow rounded-lg p-4 mx-2 mb-4 flex-grow">
+                <h3 id="title_vista" class="font-bold mb-2">{{title_vista}}</h3>
+                <div id="plot" class="w-full h-64" style="height: 70vh"></div>
+            </div>
+
+            <div id="right-sidebar" class="sidebar right bg-white shadow rounded-lg p-4 mx-2 mb-4">
+                <h3 class="font-bold mb-2">Buscar elemento</h3>
+                <input type="text" id="search" class="w-full p-2 border rounded mb-4" placeholder="Buscar">
+
+                <h3 class="font-bold mt-4 mb-2">Lista de elementos</h3>
+                <ul id="element-list" class="h-48 overflow-y-auto">
+                    {% for patent_id in patent_ids %}
+                        <li class="cursor-pointer hover:bg-gray-200 p-1 transition-colors duration-150" 
+                            onclick="highlightPoint('{{ patent_id }}')"
+                            data-patent-id="{{ patent_id }}">
+                            {{ patent_id }}
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-6 mb-6">
+            <div class="bg-white shadow rounded-lg p-4">
+                <h3 class="font-bold mb-2"></h3>
+                <p>{{settings.research_text}}</p>
+            </div>
+            <div class="bg-white shadow rounded-lg p-4">
+                <p>{% for researcher in settings.researchers %}{{researcher}} - {% endfor %}</p>
+            </div>
+            <div class="bg-white shadow rounded-lg p-4">
+                <p>{{settings.institute}}</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="left-toggle" class="sidebar-toggle left-toggle">≡</div>
+    <div id="right-toggle" class="sidebar-toggle right-toggle">≡</div>
+
+    <script>
+        console.log('Entrando al script de JS')
+        var plotData = JSON.parse('{{ initial_plot | safe }}');
+        var plotLayout = {
+            scene: {
+                xaxis: {title: 'X'},
+                yaxis: {title: 'Y'},
+                zaxis: {title: 'Z'}
+            },
+            margin: {l:0, r:0, b:0, t:0}
+        };
+        Plotly.newPlot('plot', plotData.data, plotLayout);
+
+        // Función de búsqueda actualizada
+        document.getElementById('search').addEventListener('input', function(e) {
+            var searchTerm = e.target.value.toLowerCase();
+            var listItems = document.getElementById('element-list').getElementsByTagName('li');
+            
+            Array.from(listItems).forEach(function(item) {
+                var text = item.getAttribute('data-patent-id').toLowerCase();
+                if (text.includes(searchTerm)) {
+                    item.style.display = "";
+                } else {
+                    item.style.display = "none";
+                }
+            });
+        });
+
+        function highlightPoint(patentId) {
+            console.log("Highlighting point: ", patentId);
+            var graphType = document.getElementById('graph-type').value;
+            var subOption = document.getElementById('sub-option').value;
+            
+            // Resaltar el elemento en la lista
+            var listItems = document.getElementById('element-list').getElementsByTagName('li');
+            Array.from(listItems).forEach(function(item) {
+                if (item.getAttribute('data-patent-id') === patentId) {
+                    item.classList.add('selected');
+                    item.style.backgroundColor = '#FFE4E1';
+                } else {
+                    item.classList.remove('selected');
+                    item.style.backgroundColor = '';
+                }
+            });
+
+            updateGraph(patentId);
+        }
+
+        document.getElementById('graph-type').addEventListener('change', function() {
+            var graphType = this.value;
+            var subOptionSelect = document.getElementById('sub-option');
+            subOptionSelect.innerHTML = '';
+            
+            var subOptions = {{ settings.sub_options | tojson }};
+            subOptions[graphType].forEach(function(option) {
+                var opt = document.createElement('option');
+                opt.value = option;
+                opt.innerHTML = option;
+                subOptionSelect.appendChild(opt);
+            });
+            
+            // Reset search y visualización de la lista
+            document.getElementById('search').value = '';
+            var listItems = document.getElementById('element-list').getElementsByTagName('li');
+            Array.from(listItems).forEach(item => {
+                item.style.display = '';
+                item.classList.remove('selected');
+                item.style.backgroundColor = '';
+            });
+            
+            subOptionSelect.selectedIndex = 0;
+            updateGraph();
+        });
+
+        document.getElementById('sub-option').addEventListener('change', function() {
+            updateGraph();
+        });
+
+        function updateGraph(selectedPatentId = null) {
+            var graphType = document.getElementById('graph-type').value;
+            var subOption = document.getElementById('sub-option').value;
+
+            // Mantener el punto seleccionado al cambiar de tipo de gráfico
+            if (!selectedPatentId && window.lastSelectedPatent) {
+                selectedPatentId = window.lastSelectedPatent;
+            }
+
+            if (selectedPatentId) {
+                window.lastSelectedPatent = selectedPatentId;
+            }
+
+            if (!selectedPatentId && (subOption === "Solo misma clase" || graphType === "Visualización en redes")) {
+                var firstVisiblePatent = Array.from(document.getElementById('element-list').getElementsByTagName('li'))
+                    .find(item => item.style.display !== 'none');
+                if (firstVisiblePatent) {
+                    selectedPatentId = firstVisiblePatent.getAttribute('data-patent-id');
+                    window.lastSelectedPatent = selectedPatentId;
+                }
+            }
+
+            fetch('/update_graph', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    graph_type: graphType,
+                    sub_option: subOption,
+                    selected_patent_id: selectedPatentId
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                plotData = JSON.parse(data.plot);
+                Plotly.react('plot', plotData.data, plotData.layout);
+            });
+        }
+
+        // Inicializar el gráfico
+        updateGraph();
+
+        // Añadir funcionalidad para los toggles de las sidebars
+        document.getElementById('left-toggle').addEventListener('click', function() {
+            document.getElementById('left-sidebar').classList.toggle('open');
+        });
+
+        document.getElementById('right-toggle').addEventListener('click', function() {
+            document.getElementById('right-sidebar').classList.toggle('open');
+        });
+
+        // Ajustar el tamaño del gráfico cuando cambia el tamaño de la ventana
+        window.addEventListener('resize', function() {
+            Plotly.Plots.resize('plot');
+        });
+    </script>
+</body>
+</html>
